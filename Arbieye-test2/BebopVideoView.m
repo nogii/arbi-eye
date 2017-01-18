@@ -128,6 +128,19 @@ int curSta=0;
                 NSLog(@"Error creating the format description = %@", [error description]);
                 [self cleanFormatDesc];
             } else {
+                
+                //Video Decompression
+                VTDecompressionOutputCallbackRecord callback;
+                callback.decompressionOutputCallback = my_decompression_callback;
+                callback.decompressionOutputRefCon = (__bridge void *)(self);
+                
+                VTDecompressionSessionCreate(NULL,
+                                             _formatDesc,
+                                             NULL,
+                                             NULL,
+                                             &callback,
+                                             &_decompressionSessionRef);
+                
                 success = YES;
             }
         }
@@ -185,23 +198,6 @@ int curSta=0;
             CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
         }
 
-        //Video Decompression
-        VTDecompressionOutputCallbackRecord callback;
-        callback.decompressionOutputCallback = my_decompression_callback;
-        callback.decompressionOutputRefCon = (__bridge void *)(self);
-        VTDecompressionSessionCreate(NULL,
-                                     _formatDesc,
-                                     NULL,
-                                     NULL,
-                                     &callback,
-                                     &_decompressionSessionRef);
-        
-        osstatus = VTDecompressionSessionDecodeFrame(_decompressionSessionRef,
-                                                     sampleBufferRef,
-                                                     kVTDecodeFrame_1xRealTimePlayback,
-                                                     NULL,
-                                                     NULL);
-
         if (success &&
             [_videoLayer status] != AVQueuedSampleBufferRenderingStatusFailed &&
             _videoLayer.isReadyForMoreMediaData)
@@ -210,6 +206,12 @@ int curSta=0;
             dispatch_sync(dispatch_get_main_queue(), ^{
                 if (_canDisplayVideo)
                 {
+                    osstatus = VTDecompressionSessionDecodeFrame(_decompressionSessionRef,
+                                                                 sampleBufferRef,
+                                                                 kVTDecodeFrame_1xRealTimePlayback,
+                                                                 NULL,
+                                                                 NULL);
+                    
                     [_videoLayer enqueueSampleBuffer:sampleBufferRef];
                 }
             });
