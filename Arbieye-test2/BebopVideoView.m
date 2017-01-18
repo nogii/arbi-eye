@@ -55,7 +55,6 @@ int curSta=0;
     return self;
 }
 
-
 - (void)customInit {
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(enteredBackground:) name:UIApplicationDidEnterBackgroundNotification object: nil];
     [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(enterForeground:) name:UIApplicationWillEnterForegroundNotification object: nil];
@@ -128,12 +127,10 @@ int curSta=0;
                 NSLog(@"Error creating the format description = %@", [error description]);
                 [self cleanFormatDesc];
             } else {
-                
                 //Video Decompression
                 VTDecompressionOutputCallbackRecord callback;
                 callback.decompressionOutputCallback = my_decompression_callback;
                 callback.decompressionOutputRefCon = (__bridge void *)(self);
-                
                 VTDecompressionSessionCreate(NULL,
                                              _formatDesc,
                                              NULL,
@@ -151,7 +148,7 @@ int curSta=0;
 - (BOOL)displayFrame:(ARCONTROLLER_Frame_t *)frame
 {
     BOOL success = !_lastDecodeHasFailed;
-    
+
     if (success && _canDisplayVideo) {
         CMBlockBufferRef blockBufferRef = NULL;
         CMSampleTimingInfo timing = kCMTimingInfoInvalid;
@@ -178,7 +175,7 @@ int curSta=0;
                 success = NO;
             }
         }
-        
+
         if (success) {
             const size_t sampleSize = frame->used;
             osstatus = CMSampleBufferCreate(kCFAllocatorDefault, blockBufferRef, true, NULL, NULL, _formatDesc, 1, 0, NULL, 1, &sampleSize, &sampleBufferRef);
@@ -198,20 +195,23 @@ int curSta=0;
             CFDictionarySetValue(dict, kCMSampleAttachmentKey_DisplayImmediately, kCFBooleanTrue);
         }
 
+ 
+
         if (success &&
             [_videoLayer status] != AVQueuedSampleBufferRenderingStatusFailed &&
             _videoLayer.isReadyForMoreMediaData)
         
         {
+            
+            osstatus = VTDecompressionSessionDecodeFrame(_decompressionSessionRef,
+                                                         sampleBufferRef,
+                                                         kVTDecodeFrame_1xRealTimePlayback,
+                                                         NULL,
+                                                         NULL);
             dispatch_sync(dispatch_get_main_queue(), ^{
                 if (_canDisplayVideo)
                 {
-                    osstatus = VTDecompressionSessionDecodeFrame(_decompressionSessionRef,
-                                                                 sampleBufferRef,
-                                                                 kVTDecodeFrame_1xRealTimePlayback,
-                                                                 NULL,
-                                                                 NULL);
-                    
+
                     [_videoLayer enqueueSampleBuffer:sampleBufferRef];
                 }
             });
@@ -240,8 +240,55 @@ void my_decompression_callback(void *decompressionOutputRefCon,
                                CMTime presentationTimeStamp,
                                CMTime presentationDuration)
 {
-    WrapperClass *wc = [[WrapperClass alloc] init];
-    [wc setCurrentStatus:imageBuffer];
+    //WrapperClass *wc = [[WrapperClass alloc] init];
+    //[wc setCurrentStatus:imageBuffer];
+    IplImage *iplimage = 0;
+    if (imageBuffer) {
+        CVPixelBufferLockBaseAddress(imageBuffer, 0);
+        // get information of the image in the buffer
+        uint8_t *bufferBaseAddress = (uint8_t *)CVPixelBufferGetBaseAddressOfPlane(imageBuffer, 0);
+        size_t bufferWidth = CVPixelBufferGetWidth(imageBuffer);
+        size_t bufferHeight = CVPixelBufferGetHeight(imageBuffer);
+        
+        // create IplImage
+        if (bufferBaseAddress) {
+            iplimage = cvCreateImage(cvSize(bufferWidth, bufferHeight), IPL_DEPTH_8U, 4);
+            iplimage->imageData = (char*)bufferBaseAddress;
+        }
+   
+        
+        //=============iplImage to UIImage ===================
+        CGColorSpaceRef colorSpace;
+        colorSpace = CGColorSpaceCreateDeviceRGB();
+        NSData *data = [NSData dataWithBytes:iplimage->imageData length:iplimage->imageSize];
+        
+        CGDataProviderRef provider = CGDataProviderCreateWithCFData((__bridge CFDataRef)data);
+        
+        
+        CGImageRef imageRef = CGImageCreate(iplimage->width,
+                                            iplimage->height,
+                                            iplimage->depth,
+                                            iplimage->depth * iplimage->nChannels,
+                                            iplimage->widthStep,
+                                            colorSpace,
+                                            kCGImageAlphaNone|kCGBitmapByteOrderDefault,
+                                            provider,
+                                            NULL,
+                                            false,
+                                            kCGRenderingIntentDefault
+                                            );
+        
+        
+        UIImage *outputImage = [UIImage imageWithCGImage:imageRef];
+        
+        
+        CGImageRelease(imageRef);
+        CGDataProviderRelease(provider);
+        CGColorSpaceRelease(colorSpace);
+        
+        // =====================================================
+        
+    }
 }
 
 
